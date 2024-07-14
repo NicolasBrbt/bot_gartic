@@ -7,18 +7,6 @@ from PIL import Image
 from io import BytesIO
 import numpy as np
 import sys
-import keyboard
-from scipy.spatial import KDTree
-
-numberColor = 26
-nombreCoins = 2
-
-colorPosition = []
-colorColor = []
-mouse2 = Controller()
-grid = []
-largeur = 0
-hauteur = 0
 
 def chargerImage(image_url):
     response = requests.get(image_url)
@@ -26,20 +14,51 @@ def chargerImage(image_url):
     return image
 
 
+def draw_line(tupleCoordonnees, initialCoordonate):
+    mouse = Controller()
+    x1 = tupleCoordonnees[0][0] + initialCoordonate[0]
+    x2 = tupleCoordonnees[1][0] + initialCoordonate[0]
+
+    y1 = tupleCoordonnees[0][1] + initialCoordonate[1]
+    y2 = tupleCoordonnees[1][1] + initialCoordonate[1]
+
+    mouse.position = (x1, y1)
+    time.sleep(0.008)
+    mouse.press(Button.left)
+    mouse.position = (x2, y2)
+    time.sleep(0.008)
+    mouse.release(Button.left)
+
+def dessiner(initalCoordonate, listeDessin,positionCouleur ):
+    mouse = Controller()
+    mouse.position = positionCouleur
+    time.sleep(1)
+    mouse.click(Button.left, 1)
+    time.sleep(1)
+
+    for trait in listeDessin:
+        draw_line(trait, initalCoordonate)
+    return
+
+
+def recupererCouleurPixel(x,y,couleurs):
+    img = ImageGrab.grab(bbox=(int(x), int(y), int(x + 1), int(y +1)))
+    couleurs.append(np.array(img.getpixel((0, 0)))[:3])
+
 def couleurPlusProche(colorColor, pixel):
-    colorColor_np = np.array(colorColor)
-    pixel_np = np.array(pixel)
+    distancePlusPetite = 10000
+    couleurRemplacement = (0,0,0)
 
-    # Vérifier si la couleur exacte existe
-    exact_match = np.where(np.all(colorColor_np == pixel_np, axis=1))[0]
-    if len(exact_match) > 0:
-        return colorColor_np[exact_match[0]]
+    for color in colorColor:
+        if np.all(pixel == color):
+            return color
+        else:
+            distance = np.linalg.norm(np.array(pixel) - np.array(color))
+            if distance < distancePlusPetite:
+                couleurRemplacement = color
+                distancePlusPetite = distance
 
-    # Utiliser KDTree pour une recherche rapide du plus proche voisin
-    tree = KDTree(colorColor_np)
-    distance, index = tree.query(pixel_np)
-
-    return colorColor_np[index]
+    return couleurRemplacement
 
 def changerCouleur(colorColor, pixels):
     colorColor = np.array(colorColor)
@@ -52,28 +71,23 @@ def changerCouleur(colorColor, pixels):
 
     return pixels.reshape(shape)
 
-def recupererCouleurPixel(x,y,couleurs):
-    img = ImageGrab.grab(bbox=(int(x), int(y), int(x + 1), int(y +1)))
-    couleurs.append(np.array(img.getpixel((0, 0)))[:3])
-
-
-def recupererCouleurGarticPhone(positionsCouleur, couleurs):
-    def getColorPosition(x, y, button, pressed):
-        if pressed and len(positionsCouleur) < numberColor:
-            positionsCouleur.append((x, y))
+def recurerPaletteCouleurs(positionsCouleurs, nbCouleurs, couleurs):
+    def getColor(x, y, button, pressed):
+        if pressed and len(positionsCouleurs) < nbCouleurs:
+            positionsCouleurs.append((int(x), int(y)))
             recupererCouleurPixel(x, y, couleurs)
-            if len(positionsCouleur) == numberColor:
-                return False  # Stop listener when enough points are selected
-            
-    with mouse.Listener(on_click=getColorPosition) as listener:
+            if len(positionsCouleurs) == nbCouleurs:
+                return False
+    with mouse.Listener(on_click=getColor) as listener:
         listener.join()
-    print("Fin de la selection des couleurs.")
-    
+    print("Fin de la selection de la palette de couleurs.")
+
+
 def recupererCoinsGrille(positionsCoins):
     def getGrid(x, y, button, pressed):
-        if pressed and len(positionsCoins) < nombreCoins:
-            positionsCoins.append((x, y))
-            if len(positionsCoins) == nombreCoins:
+        if pressed and len(positionsCoins) < 2:
+            positionsCoins.append((int(x), int(y)))
+            if len(positionsCoins) == 2:
                 return False  # Stop listener when enough points are selected
 
     with mouse.Listener(on_click=getGrid) as listener:
@@ -82,144 +96,131 @@ def recupererCoinsGrille(positionsCoins):
     print("Positions grille:", positionsCoins)
 
 
+
 def calculerDimensionsGrille(positionsCoins):
     largeur = abs(positionsCoins[0][0] - positionsCoins[1][0])
     hauteur = abs(positionsCoins[0][1] - positionsCoins[1][1])
     return largeur, hauteur
 
-def dessiner(image, grid, couleurs, positionsCouleur, taillePixel=1):
-    """
-    Dessine un motif en ne dessinant que tous les 5 pixels sur la grille.
-    
-    Args:
-    - image (numpy.ndarray): La matrice d'image représentant les pixels à dessiner.
-    - grid (list of list of int): La position de départ sur la grille (x, y).
-    - couleurs (list of list of int): Liste des couleurs à dessiner.
-    - positionsCouleur (list of list of int): Liste des positions (x, y) pour chaque couleur.
-    """
-    couleurs_uniques = list(set(tuple(pixel) for row in image for pixel in row))
-    couleurs_uniques = [np.array(couleur) for couleur in couleurs_uniques]  # Convertir en tableaux numpy pour comparaison
-    mouse = Controller()
-    
+
+def generateMatricesCouleurs(couleurs, pixels, matriceExistance):
+    matricesCouleurs = []
     for couleur in couleurs:
-        idxCouleur = rechercherIndexCouleur(couleur, couleurs)
-        if idxCouleur == -1:
-            continue  # Ignorer si la couleur n'est pas trouvée dans la liste des couleurs
-
-        xCouleur, yCouleur = positionsCouleur[idxCouleur]
-        mouse.position = (xCouleur, yCouleur)
-        mouse.click(Button.left, 1)
-
-        for i in range(0, image.shape[0], taillePixel):  # Sauter de 5 pixels en 5 pixels en Y
-            for j in range(0, image.shape[1], taillePixel):  # Sauter de 5 pixels en 5 pixels en X
-                if np.array_equal(image[i][j], couleur):
-                    if keyboard.is_pressed('q'):
-                        print("Arrêt du script demandé.")
-                        return
-                    
-                    # Dessiner sur la grille
-                    x = grid[0][0] + j
-                    y = grid[0][1] + i
-                    mouse.position = (x, y)
-                    mouse.click(Button.left, 1)
-                    #time.sleep(0.002)  # Attendre un peu pour éviter les erreurs de clic
+        matrice = np.zeros((pixels.shape[0], pixels.shape[1]))
+        for i in range (len(pixels)):
+            for j in range(pixels.shape[1]):
+                if np.any(pixels[i][j] == couleur) and matriceExistance[i][j] == 0:
+                    matrice[i][j] = 1
+                    matriceExistance[i][j] = 1
+        matricesCouleurs.append(matrice)
+    return matricesCouleurs
 
 
-def matricePixelParCouleur(image, couleurs, grid):
-    matriceTotale = []
-    for couleur in couleurs:
-        idx = rechercherIndexCouleur(couleur, couleurs)
-        if idx == -1:
-            print(f"La couleur {couleur} n'a pas été trouvée dans la liste des couleurs.")
-            continue
-        matricePixelParCouleur = []
-        for i in range(image.shape[0]):
-            for j in range(image.shape[1]):
-                if np.array_equal(image[i][j], couleur):
-                    matricePixelParCouleur.append((j + grid[0][0], i + grid[0][1], idx))
-        matriceTotale.append(matricePixelParCouleur)
-    return matriceTotale
+def ajouterColonnes0(matrices):
+    colonne_zero = np.zeros((matrices[0].shape[0], 1))
+    for i in range (len(matrices)):
+        matrices[i] = np.hstack((matrices[i], colonne_zero))
+        matrices[i] = np.hstack((colonne_zero,matrices[i]))
+    return matrices
 
 
-def dessinerMatrice(images, couleurs, positionCouleur, grid):
-    mouse = Controller()
-    matrices = matricePixelParCouleur(images, couleurs, grid)
-    
+def epurerMatricesCouleurs(matrices):
     for matrice in matrices:
-        if keyboard.is_pressed('q'):
-            print("Arrêt du script demandé.")
-            return
-
-        couleur_idx = matrice[0][2]
-        mouse.position = (positionCouleur[couleur_idx][0], positionCouleur[couleur_idx][1])
-        print("Couleur:", positionCouleur[couleur_idx])
-        mouse.click(Button.left, 1)
-        
-        for pixel in matrice:
-            if keyboard.is_pressed('q'):
-                print("Arrêt du script demandé.")
-                return
-            
-            x = pixel[0]
-            y = pixel[1]
-            mouse.position = (x, y)
-            mouse.click(Button.left, 1)
-            time.sleep(0.0008)
+        for i in range(matrice.shape[0]):
+            for j in range(matrice.shape[1]):
+                if matrice[i][j] == 1:
+                    if i > 0 and j > 0 and i < matrice.shape[0]-1 and j < matrice.shape[1]-1:
+                        if ((matrice[i-1][j] == 0 and matrice[i+1][j] == 0) or (matrice[i][j-1] == 0 and matrice[i][j+1] == 0)):
+                            matrice[i][j] = 0
+    return matrices
 
 
 
-def rechercherIndexCouleur(couleur, couleurs):
-    if np.array_equal(couleur, [255, 255, 255]):
-        return -1
-    for i in range(len(couleurs)):
-        if np.all(couleur == couleurs[i]):
-            return i
-    return -1   
+def calculGradientMatrices(matrices):
+    matricesGradient = []
+    for matrice in matrices : 
+        gradient = np.zeros_like(matrice)
+        print(matrice.shape)
+        for i in range (0, matrice.shape[1]-1):
+            gradient[:,i] = np.abs(matrice[:,i+1] - matrice[:,i])
+        print(gradient)
+        matricesGradient.append(gradient)
+    return matricesGradient
+
+
+def calculListesDessin(matricesGradient):
+    listesDessin = []
+    for matrice in matricesGradient:
+        listeDessin = []
+        for i in range(len(matrice)):
+            line = []
+            for j in range(len(matrice[0])):
+                if matrice[i][j] == 1 and len(line) == 0:
+                    line.append([j,i])
+                elif matrice[i][j] == 1 and len(line) == 1:
+                    line.append([j,i])
+                    listeDessin.append((line[0],line[1]))
+                    line = []
+        listesDessin.append(listeDessin)
+    return listesDessin
+
+
 def main():
     try:
-        # Charger l'image à partir d'une URL
+        nbCouleurs = 3
+        positionsCouleurs = []
+        couleurs = []
+
         url = input("Entrez l'URL de l'image: ")
         image = chargerImage(url)
+        image.load()
+        image2 = Image.new('RGB', image.size, (255, 255, 255))
+        image2.paste(image, None)
 
-        # Cliquer sur les 2 premières couleurs de Gartic phone.
-        print("Cliquez sur les couleurs de Gartic Phone.")
-        positionCouleur = []
-        couleurs = []
-        recupererCouleurGarticPhone(positionCouleur, couleurs)
-        print("Couleurs selectionnees:", couleurs)
-        print("Positions selectionnees:", positionCouleur)
-
-        # Cliquer sur les 2 coins de la grille
-        print("Cliquez sur les coins de la grille.")
-        grid = []
-        recupererCoinsGrille(grid)
-
-        # Calculer les dimensions de la grille
-        largeur, hauteur = calculerDimensionsGrille(grid)
-        print("Largeur:", largeur)
-        print("Hauteur:", hauteur)
-
-        # Modifier la taille de l'image
-        print("Modification de la taille de l'image.")
-        print("Taille de l'image:", image.size)
-        image = image.resize((int(largeur), int(hauteur)))
-        print("Nouvelle taille de l'image:", image.size)
-        pixels = np.array(image)
-
-        # Changer les couleurs
-        changerCouleur(couleurs, pixels)
-
-        new_image = Image.fromarray(pixels)
-        new_image.save('image_modifiee.png')  # Sauvegarder l'image modifiée
-        #new_image.show()
-
-        # Dessiner sur Gartic Phone
-        dessiner(pixels, grid, couleurs, positionCouleur,1)
-        #dessinerOptimiser(pixels, grid, couleurs, positionCouleur)
-        #dessinerMatrice(pixels, couleurs,positionCouleur, grid)
+        print("Veuillez cliquer sur les {nbCouleurs} couleurs de la palette.".format(nbCouleurs=nbCouleurs))
+        recurerPaletteCouleurs(positionsCouleurs, nbCouleurs, couleurs)
+        print("Positions couleurs:", positionsCouleurs)
+        print("Couleurs:", couleurs)
 
 
-        
+        positionsCoins = []
+        print("Veuillez cliquer sur les deux coins opposés de la grille.")
+        recupererCoinsGrille(positionsCoins)
+
+        largeur, hauteur = calculerDimensionsGrille(positionsCoins)
+        print("Dimensions grille:", largeur, hauteur)
+
+
+        print("Modification de la taille de l'image ... ")
+        image2 = image2.resize((largeur, hauteur))
+        pixels = np.array(image2)
+
+        print("Calcul des nouvelles couleurs ...")
+        pixels = changerCouleur(couleurs, pixels)
+
+        print("Generation des matrices de couleurs ...")
+        matriceExistance = np.zeros((pixels.shape[0], pixels.shape[1]))
+        matrices = generateMatricesCouleurs(couleurs, pixels, matriceExistance)
+
+        print("Epuration des matrices de couleurs ...")
+        matrices = epurerMatricesCouleurs(matrices)
+
+        print("Calcul des gradients ...")
+        matricesGradient = calculGradientMatrices(matrices)
+
+        print("Calcul des matrices de dessin ...")
+        listesDessin = calculListesDessin(matricesGradient)
+        for i in range(len(listesDessin) - 1, -1, -1):
+            # Vérifie si la longueur de la liste de dessin est inférieure à 30
+            if len(listesDessin[i]) < 1:
+                # Supprime les couleurs qui ne sont pas assez présentes
+                listesDessin[i] = []
+                # Affiche un message pour indiquer qu'une couleur a été supprimée
+                print("Couleur supprimée")
+        print(len(listesDessin))
+        time.sleep(5)
+        for i in range(1,len(listesDessin)):
+            dessiner(positionsCoins[0], listesDessin[i], positionsCouleurs[i])
 
         return 0
 

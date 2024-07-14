@@ -32,9 +32,9 @@ def draw_line(tupleCoordonnees, initialCoordonate):
 def dessiner(initalCoordonate, listeDessin,positionCouleur ):
     mouse = Controller()
     mouse.position = positionCouleur
-    time.sleep(1)
+    time.sleep(0.05)
     mouse.click(Button.left, 1)
-    time.sleep(1)
+    time.sleep(0.05)
 
     for trait in listeDessin:
         draw_line(trait, initalCoordonate)
@@ -72,12 +72,16 @@ def changerCouleur(colorColor, pixels):
     return pixels.reshape(shape)
 
 def recurerPaletteCouleurs(positionsCouleurs, nbCouleurs, couleurs):
+    nbCouleurs = int(nbCouleurs)
     def getColor(x, y, button, pressed):
+        nonlocal nbCouleurs
         if pressed and len(positionsCouleurs) < nbCouleurs:
-            positionsCouleurs.append((int(x), int(y)))
             recupererCouleurPixel(x, y, couleurs)
+            positionsCouleurs.append((int(x), int(y)))
             if len(positionsCouleurs) == nbCouleurs:
+                print("Fin de la selection de la palette de couleurs.")
                 return False
+    
     with mouse.Listener(on_click=getColor) as listener:
         listener.join()
     print("Fin de la selection de la palette de couleurs.")
@@ -106,13 +110,14 @@ def calculerDimensionsGrille(positionsCoins):
 def generateMatricesCouleurs(couleurs, pixels, matriceExistance):
     matricesCouleurs = []
     for couleur in couleurs:
-        matrice = np.zeros((pixels.shape[0], pixels.shape[1]))
-        for i in range (len(pixels)):
-            for j in range(pixels.shape[1]):
-                if np.any(pixels[i][j] == couleur) and matriceExistance[i][j] == 0:
-                    matrice[i][j] = 1
-                    matriceExistance[i][j] = 1
-        matricesCouleurs.append(matrice)
+        if(np.all(couleur != [255,255,255])):
+            matrice = np.zeros((pixels.shape[0], pixels.shape[1]))
+            for i in range (len(pixels)):
+                for j in range(pixels.shape[1]):
+                    if np.any(pixels[i][j] == couleur) and matriceExistance[i][j] == 0:
+                        matrice[i][j] = 1
+                        matriceExistance[i][j] = 1
+            matricesCouleurs.append(matrice)
     return matricesCouleurs
 
 
@@ -140,10 +145,8 @@ def calculGradientMatrices(matrices):
     matricesGradient = []
     for matrice in matrices : 
         gradient = np.zeros_like(matrice)
-        print(matrice.shape)
         for i in range (0, matrice.shape[1]-1):
             gradient[:,i] = np.abs(matrice[:,i+1] - matrice[:,i])
-        print(gradient)
         matricesGradient.append(gradient)
     return matricesGradient
 
@@ -167,7 +170,7 @@ def calculListesDessin(matricesGradient):
 
 def main():
     try:
-        nbCouleurs = 3
+        nbCouleurs = 0
         positionsCouleurs = []
         couleurs = []
 
@@ -177,11 +180,13 @@ def main():
         image2 = Image.new('RGB', image.size, (255, 255, 255))
         image2.paste(image, None)
 
+        nbCouleurs = input("Veuillez entrer le nombre de couleurs souhaitées :")
+
         print("Veuillez cliquer sur les {nbCouleurs} couleurs de la palette.".format(nbCouleurs=nbCouleurs))
         recurerPaletteCouleurs(positionsCouleurs, nbCouleurs, couleurs)
+        nbCouleurs = len(couleurs)
         print("Positions couleurs:", positionsCouleurs)
         print("Couleurs:", couleurs)
-
 
         positionsCoins = []
         print("Veuillez cliquer sur les deux coins opposés de la grille.")
@@ -190,6 +195,7 @@ def main():
         largeur, hauteur = calculerDimensionsGrille(positionsCoins)
         print("Dimensions grille:", largeur, hauteur)
 
+        print("nbCouleurs",nbCouleurs)
 
         print("Modification de la taille de l'image ... ")
         image2 = image2.resize((largeur, hauteur))
@@ -218,8 +224,14 @@ def main():
                 # Affiche un message pour indiquer qu'une couleur a été supprimée
                 print("Couleur supprimée")
         print(len(listesDessin))
-        time.sleep(5)
-        for i in range(1,len(listesDessin)):
+
+        for i in range(len(couleurs) - 1, -1, -1):
+            if np.all(couleurs[i] == [255,255,255]):
+                couleurs.pop(i)
+                positionsCouleurs.pop(i)
+
+        time.sleep(1)
+        for i in range(0,len(listesDessin)):
             dessiner(positionsCoins[0], listesDessin[i], positionsCouleurs[i])
 
         return 0

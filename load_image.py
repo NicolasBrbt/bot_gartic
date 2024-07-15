@@ -223,7 +223,6 @@ def main():
                 listesDessin[i] = []
                 # Affiche un message pour indiquer qu'une couleur a été supprimée
                 print("Couleur supprimée")
-        print(len(listesDessin))
 
         for i in range(len(couleurs) - 1, -1, -1):
             if np.all(couleurs[i] == [255,255,255]):
